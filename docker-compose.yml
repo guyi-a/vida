@@ -1,0 +1,58 @@
+
+services:
+  api:
+    build: .
+    container_name: guyi-vida
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./main.py:/app/main.py
+    # command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-delay 3.0 --reload-exclude "*.pyc" --reload-exclude "__pycache__"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+asyncpg://guyi:guyi123@postgres:5432/guyi-vida
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"  # 开发环境：出错时不自动重启，避免循环报错
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: guyi-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=guyi
+      - POSTGRES_PASSWORD=guyi123
+      - POSTGRES_DB=guyi-vida
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guyi -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: guyi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+
