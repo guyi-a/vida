@@ -62,11 +62,13 @@ setup_exception_handlers(app)
 # 注册路由
 from app.api.healthz import router as healthz_router
 from app.api.test_middleware import router as test_middleware_router
+from app.api.test_infra import router as test_infra_router
 from app.api.auth import router as auth_router
 from app.api.user import router as user_router
 
 app.include_router(healthz_router)
 app.include_router(test_middleware_router)
+app.include_router(test_infra_router)
 app.include_router(auth_router)
 app.include_router(user_router)
 

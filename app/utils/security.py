@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # 延迟导入配置，避免循环依赖
@@ -146,3 +147,42 @@ def get_username_from_token(token: str) -> Optional[str]:
     if payload:
         return payload.get("username")
     return None
+
+
+# ==================== 用户认证相关函数 ====================
+
+
+async def authenticate_user(username: str, password: str, db: AsyncSession):
+    """
+    用户认证辅助函数
+    验证用户名和密码，返回用户对象或抛出异常
+    
+    Args:
+        username: 用户名
+        password: 密码
+        db: 数据库会话
+        
+    Returns:
+        User: 用户对象
+        
+    Raises:
+        UnauthorizedException: 用户名或密码错误，或用户已被删除
+    """
+    # 延迟导入避免循环依赖
+    from app.crud import user_crud
+    from app.core.exception import UnauthorizedException
+    
+    # 查找用户
+    user = await user_crud.get_by_username(db, username)
+    if not user:
+        raise UnauthorizedException("用户名或密码错误")
+    
+    # 验证密码
+    if not verify_password(password, user.password):
+        raise UnauthorizedException("用户名或密码错误")
+    
+    # 检查用户是否被删除
+    if user.isDelete != 0:
+        raise UnauthorizedException("用户已被删除")
+    
+    return user

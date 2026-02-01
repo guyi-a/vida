@@ -1,13 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
+from typing import Dict, Any, Union, Optional
 
 from app.core.dependencies import get_db, get_current_user
 from app.core.exception import UnauthorizedException, BadRequestException
 from app.models.user import User
 from app.crud.user_crud import user_crud
-from app.utils.security import verify_password, get_password_hash, create_access_token
+from app.utils.security import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    authenticate_user
+)
 from app.schemas.request.auth_request import LoginRequest, RegisterRequest
 from app.schemas.response.auth_response import LoginResponse, RegisterResponse, LogoutResponse
 
@@ -18,7 +23,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 @router.post("/login", response_model=LoginResponse, status_code=200)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
-    用户登录
+    用户登录（JSON 格式）
     
     Args:
         request: 登录请求数据
@@ -30,18 +35,8 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     Raises:
         UnauthorizedException: 用户名或密码错误
     """
-    # 查找用户
-    user = await user_crud.get_by_username(db, request.username)
-    if not user:
-        raise UnauthorizedException("用户名或密码错误")
-    
-    # 验证密码（注意：这里使用简化的密码验证，实际生产环境应该使用hash验证）
-    if not verify_password(request.password, user.password):
-        raise UnauthorizedException("用户名或密码错误")
-    
-    # 检查用户是否被删除
-    if user.isDelete != 0:
-        raise UnauthorizedException("用户已被删除")
+    # 认证用户
+    user = await authenticate_user(request.username, request.password, db)
     
     # 生成token
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -67,6 +62,39 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             "user": user_info
         }
     )
+
+
+@router.post("/token", include_in_schema=False)
+async def oauth2_token(
+    username: str = Form(...),
+    password: str = Form(...),
+    grant_type: str = Form(default="password"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    OAuth2 Password Flow token 端点（用于 Swagger UI）
+    这是 /login 的 OAuth2 兼容版本
+    
+    Args:
+        username: 用户名
+        password: 密码
+        grant_type: OAuth2 grant type（默认为 password）
+        db: 数据库会话
+        
+    Returns:
+        OAuth2 标准格式: {"access_token": "...", "token_type": "bearer"}
+    """
+    # 认证用户
+    user = await authenticate_user(username, password, db)
+    
+    # 生成token
+    access_token = create_access_token(data={"sub": str(user.id)})
+    
+    # 返回 OAuth2 标准格式
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=201)
@@ -98,7 +126,9 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     user_data = {
         "user_name": request.username,
         "password": hashed_password,
-        "avatar": request.avatar
+        "avatar": request.avatar,
+        "background_image": request.background_image,
+        "userRole": request.userRole or "user"  # 如果没有提供，默认为 "user"
     }
     
     # 创建用户

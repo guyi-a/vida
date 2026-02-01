@@ -19,8 +19,8 @@ from app.utils.security import (
 
 
 
-# OAuth2 密码流，tokenUrl 指向登录接口
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login")
+# OAuth2 密码流，tokenUrl 指向 OAuth2 token 端点
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/token")
 
 
 async def get_db() -> AsyncSession:

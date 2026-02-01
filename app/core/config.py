@@ -42,6 +42,29 @@ class Settings(BaseSettings):
     # 日志配置
     LOG_LEVEL: str = "INFO"  # 日志级别
     
+    # MinIO配置
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_RAW_BUCKET: str = "raw-videos"
+    MINIO_PUBLIC_BUCKET: str = "public-videos"
+    MINIO_AVATAR_BUCKET: str = "user-avatars"
+    MINIO_BANNER_BUCKET: str = "user-banners"
+    MINIO_SECURE: bool = False  # 是否使用HTTPS
+    
+    # Kafka配置
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_TRANSCODE_TOPIC: str = "video-transcode-tasks"
+    KAFKA_GROUP_ID: str = "video-transcode-group"
+    
+    # Celery配置
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    CELERY_TASK_SERIALIZER: str = "json"
+    CELERY_RESULT_SERIALIZER: str = "json"
+    CELERY_ACCEPT_CONTENT: list = ["json"]
+    CELERY_TIMEZONE: str = "Asia/Shanghai"
+    
     # JWT配置
     SECRET_KEY: str = "guyi"  # JWT密钥
     ALGORITHM: str = "HS256"  # JWT算法

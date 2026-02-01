@@ -252,3 +252,37 @@ async def restore_user(
         success=True,
         message="恢复成功"
     )
+
+
+@router.post("/{user_id}/set-admin", response_model=BaseResponse, summary="设置管理员角色")
+async def set_admin_role(
+    user_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    设置用户为管理员角色
+    
+    需要管理员权限。
+    
+    - **user_id**: 用户ID
+    """
+    # 检查用户是否存在
+    user = await user_crud.get_by_id(db, user_id)
+    if not user:
+        raise NotFoundException("用户不存在")
+    
+    # 设置管理员角色
+    updated_user = await user_crud.update(db, user_id, {"userRole": "admin"})
+    if not updated_user:
+        raise NotFoundException("用户不存在")
+    
+    return BaseResponse(
+        success=True,
+        message="设置管理员角色成功",
+        data={
+            "id": updated_user.id,
+            "username": updated_user.user_name,
+            "userRole": updated_user.userRole
+        }
+    )

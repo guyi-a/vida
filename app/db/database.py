@@ -1,6 +1,10 @@
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # 创建异步引擎
@@ -34,6 +38,20 @@ async def init_db():
     创建所有表结构
     """
     async with engine.begin() as conn:
+        # 先尝试删除可能存在的旧冲突索引（如果存在）
+        old_indexes = [
+            "idx_created_at",  # 旧的通用 created_at 索引
+            "idx_user_id",     # 旧的通用 user_id 索引
+            "idx_video_id",   # 旧的通用 video_id 索引
+        ]
+        for index_name in old_indexes:
+            try:
+                await conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+                logger.info(f"Dropped old index: {index_name}")
+            except Exception as e:
+                logger.debug(f"Index {index_name} does not exist or already dropped: {e}")
+        
+        # 创建所有表结构
         await conn.run_sync(Base.metadata.create_all)
 
 

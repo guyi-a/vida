@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from app.core.exception import UnauthorizedException, ForbiddenException
+from app.core.dependencies import require_admin
 from app.models.user import User
 
 router = APIRouter(prefix="/api/test", tags=["Middleware Test"])
@@ -54,8 +55,21 @@ async def test_rate_limit():
 
 
 @router.get("/admin-only")
-async def test_admin_only():
+async def test_admin_only(current_user: User = Depends(require_admin)):
     """
     测试管理员权限
+    
+    只有管理员用户才能访问此接口
     """
-    raise ForbiddenException("Admin access required for this endpoint")
+    return JSONResponse(
+        content={
+            "success": True,
+            "message": "管理员权限验证成功",
+            "data": {
+                "user_id": current_user.id,
+                "username": current_user.user_name,
+                "userRole": current_user.userRole
+            }
+        },
+        status_code=200
+    )

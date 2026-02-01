@@ -1,7 +1,7 @@
 # ==================== 异常处理器 ====================
 
 import logging
-from typing import Optional
+from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
@@ -11,6 +11,26 @@ from .exception import BaseAPIException
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """
+    清理对象，确保可以序列化为 JSON
+    将 bytes 对象转换为字符串
+    """
+    if isinstance(obj, bytes):
+        try:
+            return obj.decode('utf-8')
+        except UnicodeDecodeError:
+            return obj.decode('utf-8', errors='replace')
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(sanitize_for_json(item) for item in obj)
+    else:
+        return obj
 
 
 async def api_exception_handler(request: Request, exc: BaseAPIException):
@@ -34,14 +54,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     """
     处理请求参数验证异常
     """
-    logger.error(f"Validation Error: {exc.errors()} - Path: {request.url.path}")
+    errors = exc.errors()
+    logger.error(f"Validation Error: {errors} - Path: {request.url.path}")
+    # 清理错误详情，确保可以序列化为 JSON
+    sanitized_errors = sanitize_for_json(errors)
     return JSONResponse(
         status_code=422,
         content={
             "error": {
                 "code": 422,
                 "message": "请求参数验证失败",
-                "details": exc.errors(),
+                "details": sanitized_errors,
                 "type": "ValidationError"
             }
         }
@@ -86,13 +109,20 @@ async def http_exception_handler(request: Request, exc):
     """
     处理HTTP异常
     """
-    logger.error(f"HTTP Exception: {exc.detail} - Path: {request.url.path}")
+    detail = exc.detail
+    # 如果 detail 是 bytes，转换为字符串
+    if isinstance(detail, bytes):
+        try:
+            detail = detail.decode('utf-8')
+        except UnicodeDecodeError:
+            detail = detail.decode('utf-8', errors='replace')
+    logger.error(f"HTTP Exception: {detail} - Path: {request.url.path}")
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "error": {
                 "code": exc.status_code,
-                "message": exc.detail,
+                "message": detail,
                 "type": "HTTPError"
             }
         }

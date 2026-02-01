@@ -1,5 +1,6 @@
 from sqlalchemy import Column, BigInteger, String, text
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
@@ -54,6 +55,11 @@ class User(Base):
     
     # 软删除标识 (0: 未删除, 1: 已删除)
     isDelete = Column(BigInteger, nullable=False, server_default=text("0"), comment="删除标识：0-未删除，1-已删除")
+    
+    # 关系定义
+    videos = relationship("Video", back_populates="author", cascade="all, delete-orphan")
+    favorites = relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
+    comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, user_name='{self.user_name}', userRole='{self.userRole}')>"
