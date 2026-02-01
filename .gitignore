@@ -1,9 +1,13 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Documentation (exclude from version control)
+docs/
 build/
 develop-eggs/
 dist/
