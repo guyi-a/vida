@@ -1,7 +1,8 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+from io import BytesIO
 from app.core.dependencies import get_db, get_current_user, require_admin, check_owner_or_admin
 from app.core.exception import NotFoundException, BadRequestException
 from app.models.user import User
@@ -9,6 +10,7 @@ from app.crud import user_crud
 from app.schemas.response.base_response import BaseResponse, PaginatedResponse
 from app.schemas.response.user_response import UserListResponse, UserInfoResponse
 from app.schemas.request.user_request import UserUpdateRequest
+from app.infra.minio.minio_service import MinioService
 
 
 router = APIRouter(prefix="/api/v1/users", tags=["用户管理"])
@@ -286,3 +288,131 @@ async def set_admin_role(
             "userRole": updated_user.userRole
         }
     )
+
+
+@router.post("/avatar/upload", response_model=BaseResponse, summary="上传用户头像")
+async def upload_avatar(
+    avatar_file: UploadFile = File(..., description="头像文件"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    上传用户头像
+    
+    - 需要登录
+    - 支持格式：JPG, PNG, GIF, WebP
+    - 文件大小限制：5MB
+    - 上传成功后会自动更新用户头像URL
+    """
+    try:
+        # 1. 验证文件格式
+        allowed_formats = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+        file_ext = avatar_file.filename.split('.')[-1].lower() if avatar_file.filename else ''
+        if file_ext not in allowed_formats:
+            raise BadRequestException(f"不支持的文件格式，支持的格式：{', '.join(allowed_formats)}")
+        
+        # 2. 验证文件大小（限制 5MB）
+        max_size = 5 * 1024 * 1024  # 5MB
+        file_content = await avatar_file.read()
+        file_size = len(file_content)
+        if file_size > max_size:
+            raise BadRequestException(f"文件大小不能超过 {max_size // 1024 // 1024}MB")
+        
+        # 3. 上传到 MinIO
+        file_obj = BytesIO(file_content)
+        upload_result = MinioService.upload_user_avatar(
+            file_obj=file_obj,
+            filename=avatar_file.filename or f"avatar.{file_ext}",
+            user_id=current_user.id
+        )
+        
+        # 4. 更新用户头像URL
+        updated_user = await user_crud.update(db, current_user.id, {
+            "avatar": upload_result["public_url"]
+        })
+        
+        if not updated_user:
+            raise NotFoundException("用户不存在")
+        
+        await db.commit()
+        
+        return BaseResponse(
+            success=True,
+            message="头像上传成功",
+            data={
+                "avatar_url": upload_result["public_url"],
+                "object_name": upload_result["object_name"],
+                "user_id": current_user.id
+            }
+        )
+        
+    except (BadRequestException, NotFoundException):
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise BadRequestException(f"上传头像失败: {str(e)}")
+
+
+@router.post("/banner/upload", response_model=BaseResponse, summary="上传用户背景图")
+async def upload_banner(
+    banner_file: UploadFile = File(..., description="背景图文件"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    上传用户主页背景图
+    
+    - 需要登录
+    - 支持格式：JPG, PNG, GIF, WebP
+    - 文件大小限制：10MB
+    - 上传成功后会自动更新用户背景图URL
+    """
+    try:
+        # 1. 验证文件格式
+        allowed_formats = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+        file_ext = banner_file.filename.split('.')[-1].lower() if banner_file.filename else ''
+        if file_ext not in allowed_formats:
+            raise BadRequestException(f"不支持的文件格式，支持的格式：{', '.join(allowed_formats)}")
+        
+        # 2. 验证文件大小（限制 10MB）
+        max_size = 10 * 1024 * 1024  # 10MB
+        file_content = await banner_file.read()
+        file_size = len(file_content)
+        if file_size > max_size:
+            raise BadRequestException(f"文件大小不能超过 {max_size // 1024 // 1024}MB")
+        
+        # 3. 上传到 MinIO
+        file_obj = BytesIO(file_content)
+        upload_result = MinioService.upload_user_banner(
+            file_obj=file_obj,
+            filename=banner_file.filename or f"banner.{file_ext}",
+            user_id=current_user.id
+        )
+        
+        # 4. 更新用户背景图URL
+        updated_user = await user_crud.update(db, current_user.id, {
+            "background_image": upload_result["public_url"]
+        })
+        
+        if not updated_user:
+            raise NotFoundException("用户不存在")
+        
+        await db.commit()
+        
+        return BaseResponse(
+            success=True,
+            message="背景图上传成功",
+            data={
+                "banner_url": upload_result["public_url"],
+                "object_name": upload_result["object_name"],
+                "user_id": current_user.id
+            }
+        )
+        
+    except (BadRequestException, NotFoundException):
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise BadRequestException(f"上传背景图失败: {str(e)}")

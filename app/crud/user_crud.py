@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from app.models.user import User
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 
 class UserCRUD:
@@ -181,6 +181,100 @@ class UserCRUD:
         
         result = await db.execute(query)
         return result.scalar() or 0
+    
+    async def get_multiple_users(
+        self,
+        db: AsyncSession,
+        user_ids: List[int]
+    ) -> List[User]:
+        """
+        批量获取用户信息
+        
+        Args:
+            db: 数据库会话
+            user_ids: 用户ID列表
+            
+        Returns:
+            List[User]: 用户列表
+        """
+        if not user_ids:
+            return []
+        
+        query = select(User).where(User.id.in_(user_ids))
+        result = await db.execute(query)
+        return list(result.scalars().all())
+    
+    async def increment_follow_count(self, db: AsyncSession, user_id: int) -> bool:
+        """
+        增加用户的关注数（业务逻辑中维护）
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否成功
+        """
+        from sqlalchemy import update
+        query = update(User).where(User.id == user_id).values(
+            follow_count=User.follow_count + 1
+        )
+        result = await db.execute(query)
+        return result.rowcount > 0
+    
+    async def decrement_follow_count(self, db: AsyncSession, user_id: int) -> bool:
+        """
+        减少用户的关注数（业务逻辑中维护）
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否成功
+        """
+        from sqlalchemy import update
+        query = update(User).where(
+            and_(User.id == user_id, User.follow_count > 0)
+        ).values(follow_count=User.follow_count - 1)
+        result = await db.execute(query)
+        return result.rowcount > 0
+    
+    async def increment_follower_count(self, db: AsyncSession, user_id: int) -> bool:
+        """
+        增加用户的粉丝数（业务逻辑中维护）
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否成功
+        """
+        from sqlalchemy import update
+        query = update(User).where(User.id == user_id).values(
+            follower_count=User.follower_count + 1
+        )
+        result = await db.execute(query)
+        return result.rowcount > 0
+    
+    async def decrement_follower_count(self, db: AsyncSession, user_id: int) -> bool:
+        """
+        减少用户的粉丝数（业务逻辑中维护）
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否成功
+        """
+        from sqlalchemy import update
+        query = update(User).where(
+            and_(User.id == user_id, User.follower_count > 0)
+        ).values(follower_count=User.follower_count - 1)
+        result = await db.execute(query)
+        return result.rowcount > 0
 
 
 # 创建全局CRUD实例

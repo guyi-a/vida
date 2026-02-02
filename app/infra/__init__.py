@@ -13,7 +13,6 @@ from .kafka import kafka_client, kafka_service
 # 如果需要使用 celery_app，请直接从 app.infra.celery 导入
 # from .celery import celery_app
 
-
 __all__ = [
     # MinIO
     "MinioClient",

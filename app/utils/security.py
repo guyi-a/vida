@@ -168,21 +168,31 @@ async def authenticate_user(username: str, password: str, db: AsyncSession):
     Raises:
         UnauthorizedException: 用户名或密码错误，或用户已被删除
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # 延迟导入避免循环依赖
     from app.crud import user_crud
     from app.core.exception import UnauthorizedException
     
     # 查找用户
+    logger.debug(f"尝试登录用户: {username}")
     user = await user_crud.get_by_username(db, username)
     if not user:
+        logger.warning(f"用户不存在: {username}")
         raise UnauthorizedException("用户名或密码错误")
     
     # 验证密码
-    if not verify_password(password, user.password):
+    password_valid = verify_password(password, user.password)
+    logger.debug(f"密码验证结果: {password_valid}, 用户ID: {user.id}")
+    if not password_valid:
+        logger.warning(f"密码错误: 用户 {username} (ID: {user.id})")
         raise UnauthorizedException("用户名或密码错误")
     
     # 检查用户是否被删除
     if user.isDelete != 0:
+        logger.warning(f"用户已被删除: {username} (ID: {user.id})")
         raise UnauthorizedException("用户已被删除")
     
+    logger.info(f"用户登录成功: {username} (ID: {user.id})")
     return user

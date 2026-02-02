@@ -35,6 +35,10 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     Raises:
         UnauthorizedException: 用户名或密码错误
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"登录请求 - 用户名: {request.username}")
+    
     # 认证用户
     user = await authenticate_user(request.username, request.password, db)
     

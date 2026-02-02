@@ -8,6 +8,7 @@ from minio.error import S3Error
 from typing import Optional, List, BinaryIO
 import mimetypes
 import os
+import json
 from datetime import timedelta
 
 from app.core.config import settings
@@ -33,19 +34,67 @@ class MinioClient:
     
     def _ensure_buckets(self):
         """确保必需的bucket存在，不存在则创建"""
-        buckets = [
-            settings.MINIO_RAW_BUCKET, 
+        # 公共访问的 bucket（需要设置公开策略）
+        public_buckets = [
             settings.MINIO_PUBLIC_BUCKET,
             settings.MINIO_AVATAR_BUCKET,
             settings.MINIO_BANNER_BUCKET
         ]
         
-        for bucket_name in buckets:
+        # 私有 bucket
+        private_buckets = [
+            settings.MINIO_RAW_BUCKET
+        ]
+        
+        # 创建公共 bucket 并设置公开访问策略
+        for bucket_name in public_buckets:
             if not self.client.bucket_exists(bucket_name):
                 self.client.make_bucket(bucket_name)
-                print(f"创建bucket: {bucket_name}")
+                # 设置公开读取策略
+                self._set_public_policy(bucket_name)
+                print(f"创建公共bucket: {bucket_name} (已设置公开访问)")
             else:
-                print(f"bucket已存在: {bucket_name}")
+                # 确保已有 bucket 也有公开策略
+                try:
+                    self._set_public_policy(bucket_name)
+                except Exception as e:
+                    print(f"设置bucket策略失败 {bucket_name}: {e}")
+                print(f"公共bucket已存在: {bucket_name}")
+        
+        # 创建私有 bucket
+        for bucket_name in private_buckets:
+            if not self.client.bucket_exists(bucket_name):
+                self.client.make_bucket(bucket_name)
+                print(f"创建私有bucket: {bucket_name}")
+            else:
+                print(f"私有bucket已存在: {bucket_name}")
+    
+    def _set_public_policy(self, bucket_name: str):
+        """
+        设置 bucket 的公开读取策略
+        
+        Args:
+            bucket_name: bucket 名称
+        """
+        # MinIO 公开读取策略（允许匿名用户读取）
+        public_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"AWS": ["*"]},
+                    "Action": ["s3:GetObject"],
+                    "Resource": [f"arn:aws:s3:::{bucket_name}/*"]
+                }
+            ]
+        }
+        
+        try:
+            self.client.set_bucket_policy(bucket_name, json.dumps(public_policy))
+        except S3Error as e:
+            # 如果设置策略失败，记录警告但不中断程序
+            print(f"警告: 设置bucket {bucket_name} 公开策略失败: {e}")
+            # 某些 MinIO 版本可能需要不同的方法，这里不抛出异常
     
     def upload_file(
         self, 
@@ -233,7 +282,8 @@ class MinioClient:
         try:
             objects = self.client.list_objects(
                 bucket_name=bucket_name,
-                prefix=prefix
+                prefix=prefix,
+                recursive=True
             )
             return [obj.object_name for obj in objects]
         except S3Error as e:
@@ -247,17 +297,28 @@ class MinioClient:
         """
         获取公共bucket中对象的直接访问URL
         
+        注意：bucket 必须设置为公开访问策略才能直接访问
+        
         Args:
             object_name: 对象名称
             bucket_name: bucket名称（默认为public-videos）
             
         Returns:
-            直接访问URL
+            直接访问URL（格式：http://{endpoint}/{bucket}/{object}）
         """
         if bucket_name is None:
             bucket_name = settings.MINIO_PUBLIC_BUCKET
-            
-        return f"http://{settings.MINIO_ENDPOINT}/{bucket_name}/{object_name}"
+        
+        # 处理 endpoint，如果是容器内地址，转换为外部访问地址
+        endpoint = settings.MINIO_ENDPOINT
+        # 如果 endpoint 是容器名（如 minio:9000），转换为 localhost
+        if endpoint.startswith('minio:'):
+            endpoint = endpoint.replace('minio:', 'localhost:')
+        
+        # MinIO 公开访问 URL 格式
+        # 如果使用 HTTPS，需要确保 endpoint 包含协议
+        protocol = "https" if settings.MINIO_SECURE else "http"
+        return f"{protocol}://{endpoint}/{bucket_name}/{object_name}"
 
 
 # 创建全局MinIO客户端实例

@@ -131,6 +131,7 @@ class KafkaService:
     def process_transcode_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理转码任务（消费者端调用）
+        调用 Celery 的 video_transcode_task 执行实际转码
         
         Args:
             task_data: 任务数据
@@ -143,21 +144,29 @@ class KafkaService:
         print(f"开始处理转码任务 - Task ID: {task_msg.task_id}, Video ID: {task_msg.video_id}")
         
         try:
-            # TODO: 实现实际的转码逻辑
-            # 这里先返回模拟结果
+            # 导入 Celery 任务（延迟导入避免循环依赖）
+            from app.tasks.video_transcode import video_transcode_task
+            
+            # 调用 Celery 任务异步执行转码
+            celery_task = video_transcode_task.delay(
+                video_id=task_msg.video_id,
+                raw_object_name=task_msg.raw_file_path,
+                user_id=task_msg.user_id,
+                quality=task_msg.quality,
+                format=task_msg.format,
+                generate_cover=task_msg.generate_cover
+            )
+            
             result = {
                 'task_id': task_msg.task_id,
+                'celery_task_id': celery_task.id,
                 'video_id': task_msg.video_id,
-                'status': 'completed',
-                'processed_at': datetime.now().timestamp(),
-                'output_file': f"transcoded_{task_msg.video_id}.mp4",
-                'cover_file': f"cover_{task_msg.video_id}.jpg" if task_msg.generate_cover else None,
-                'duration': 120,  # 模拟视频时长
-                'file_size': 15728640,  # 模拟文件大小 (15MB)
-                'quality': task_msg.quality
+                'status': 'submitted',
+                'submitted_at': datetime.now().timestamp(),
+                'note': '转码任务已提交到 Celery，正在处理中'
             }
             
-            print(f"转码任务处理完成 - Task ID: {task_msg.task_id}")
+            print(f"转码任务已提交到 Celery - Task ID: {task_msg.task_id}, Celery Task ID: {celery_task.id}")
             return result
             
         except Exception as e:

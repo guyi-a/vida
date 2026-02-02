@@ -1,7 +1,10 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
+import os
 from app.core.config import settings
 from app.core.middleware import LoggingMiddleware, TimingMiddleware, setup_cors_middleware
 from app.core.exception import setup_exception_handlers
@@ -18,17 +21,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def start_kafka_consumer():
+    """
+    在后台线程中启动 Kafka 消费者
+    """
+    try:
+        from app.infra.kafka.kafka_service import kafka_service
+        logger.info("Starting Kafka consumer in background thread...")
+        kafka_service.start_consumer()
+    except Exception as e:
+        logger.error(f"Failed to start Kafka consumer: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     应用生命周期管理
-    启动时初始化数据库，关闭时清理资源
+    启动时初始化数据库和 Kafka 消费者，关闭时清理资源
     """
     # 启动时执行
     logger.info("Starting application...")
     try:
         # 初始化数据库
         await init_db()
+        
+        # 在后台线程中启动 Kafka 消费者
+        kafka_thread = threading.Thread(
+            target=start_kafka_consumer,
+            daemon=True,
+            name="KafkaConsumerThread"
+        )
+        kafka_thread.start()
+        logger.info("Kafka consumer thread started")
+        
         logger.info("Application started successfully")
     except Exception as e:
         logger.error("Failed to initialize application: %s", str(e))
@@ -59,23 +84,37 @@ setup_cors_middleware(app)  # CORS 中间件最后添加
 # 设置异常处理器
 setup_exception_handlers(app)
 
+# 挂载静态文件
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # 注册路由
 from app.api.healthz import router as healthz_router
 from app.api.test_middleware import router as test_middleware_router
 from app.api.test_infra import router as test_infra_router
 from app.api.auth import router as auth_router
 from app.api.user import router as user_router
+from app.api.video import router as video_router
+from app.api.favorite import router as favorite_router
+from app.api.comment import router as comment_router
+from app.api.relation import router as relation_router
 
 app.include_router(healthz_router)
 app.include_router(test_middleware_router)
 app.include_router(test_infra_router)
 app.include_router(auth_router)
 app.include_router(user_router)
+app.include_router(video_router)
+app.include_router(favorite_router)
+app.include_router(comment_router)
+app.include_router(relation_router)
 
 
 @app.get("/")
 async def root():
-    """根路径"""
+    """根路径 - 返回前端页面"""
+    index_path = os.path.join("static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {
         "message": "Hello World",
         "project": settings.PROJECT_NAME,

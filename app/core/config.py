@@ -15,19 +15,11 @@ class Settings(BaseSettings):
     # 应用配置
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
-    
-    
-
-
     # API配置
     API_VERSION: str = "0.1.0"
     PROJECT_NAME: str = "Vida API"
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_VERSION: str = "0.1.0"
-
-
-
-
 
     # CORS配置
     CORS_ORIGINS: list = ["*"]  # 允许的来源
@@ -35,13 +27,9 @@ class Settings(BaseSettings):
     CORS_ALLOW_METHODS: list = ["*"]  # 允许的HTTP方法
     CORS_ALLOW_HEADERS: list = ["*"]  # 允许的HTTP头
 
-
-
-
-
     # 日志配置
     LOG_LEVEL: str = "INFO"  # 日志级别
-    
+
     # MinIO配置
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minioadmin"
@@ -57,9 +45,9 @@ class Settings(BaseSettings):
     KAFKA_TRANSCODE_TOPIC: str = "video-transcode-tasks"
     KAFKA_GROUP_ID: str = "video-transcode-group"
     
-    # Celery配置
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # Celery配置（默认使用 REDIS_URL）
+    CELERY_BROKER_URL: Optional[str] = None
+    CELERY_RESULT_BACKEND: Optional[str] = None
     CELERY_TASK_SERIALIZER: str = "json"
     CELERY_RESULT_SERIALIZER: str = "json"
     CELERY_ACCEPT_CONTENT: list = ["json"]
@@ -70,13 +58,18 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"  # JWT算法
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 240  # Token过期时间（分钟）
 
-    
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
-    }
+        }
 
 
 # 创建全局设置实例
 settings = Settings()
+
+# 如果 CELERY_BROKER_URL 和 CELERY_RESULT_BACKEND 没有设置，使用 REDIS_URL
+if settings.CELERY_BROKER_URL is None:
+    settings.CELERY_BROKER_URL = settings.REDIS_URL
+if settings.CELERY_RESULT_BACKEND is None:
+    settings.CELERY_RESULT_BACKEND = settings.REDIS_URL
