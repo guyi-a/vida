@@ -207,21 +207,27 @@ def video_transcode_task(
                     video.duration = get_video_duration(raw_file_path)
                     
                     await session.commit()
-                    logger.info(f"视频元数据更新成功 - Video ID: {video_id}")
+                    # 刷新对象以获取最新数据
+                    await session.refresh(video)
+                    logger.info(f"视频元数据更新成功 - Video ID: {video_id}, Status: {video.status}")
                     
                     # 同步到ES（视频已发布，需要同步）
-                    try:
-                        from app.infra.elasticsearch.sync_service import sync_video_to_es
-                        # 获取作者信息
-                        author_result = await session.execute(
-                            select(User).where(User.id == video.author_id)
-                        )
-                        author = author_result.scalar_one_or_none()
-                        author_name = author.user_name if author else None
-                        await sync_video_to_es(video, author_name)
-                        logger.info(f"视频同步到ES成功 - Video ID: {video_id}")
-                    except Exception as e:
-                        logger.warning(f"同步视频到ES失败（不影响主流程）: {e}")
+                    # 注意：只有在状态为 published 时才同步到ES
+                    if video.status == 'published':
+                        try:
+                            from app.infra.elasticsearch.sync_service import sync_video_to_es
+                            # 获取作者信息
+                            author_result = await session.execute(
+                                select(User).where(User.id == video.author_id)
+                            )
+                            author = author_result.scalar_one_or_none()
+                            author_name = author.user_name if author else None
+                            await sync_video_to_es(video, author_name)
+                            logger.info(f"视频同步到ES成功 - Video ID: {video_id}, Status: {video.status}")
+                        except Exception as e:
+                            logger.warning(f"同步视频到ES失败（不影响主流程）: {e}")
+                    else:
+                        logger.info(f"视频状态为 {video.status}，跳过ES同步 - Video ID: {video_id}")
             
             # 在同步函数中运行异步代码
             asyncio.run(update_video_metadata())

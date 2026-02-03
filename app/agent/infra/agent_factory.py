@@ -11,14 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 def create_agent_graph(
-    system_prompt: str,
+    system_prompt: Optional[str] = None,
     tools: Optional[List[BaseTool]] = None
 ) -> Any:
     """
     创建Agent实例（使用LangGraph）
     
     Args:
-        system_prompt: 系统提示词（必须提供）
+        system_prompt: 系统提示词（可选，将通过消息传递）
         tools: 工具列表（可选，如果为None则默认包含搜索工具）
         
     Returns:
@@ -27,17 +27,22 @@ def create_agent_graph(
     # 获取LLM实例
     llm = get_llm()
     
+    # 检查LLM是否可用
+    if llm is None:
+        logger.error("LLM实例不可用，无法创建Agent（请检查DASHSCOPE_API_KEY和LLM_BASE_URL配置）")
+        raise ValueError("LLM服务不可用，请检查配置")
+    
     # 如果没有提供工具，默认包含搜索工具
     if tools is None:
         from app.agent.tools import create_search_tool
         tools = [create_search_tool()]
     
     try:
-        # 使用LangGraph创建Agent，直接传入系统提示词
+        # 使用LangGraph创建Agent（新版本API使用model参数，不支持system_prompt参数）
+        # system_prompt 将通过消息列表传递
         agent = create_react_agent(
-            llm=llm,
-            tools=tools,
-            system_prompt=system_prompt
+            model=llm,
+            tools=tools
         )
         
         logger.info(f"✓ Agent已创建 - tools: {len(tools)}")

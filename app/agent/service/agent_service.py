@@ -22,13 +22,14 @@ class AgentService:
             tools: 工具列表（可选，默认为空列表，后续添加搜索工具时传入）
             prompt_file: 提示词文件路径（可选，默认为 search_agent_prompt.md）
         """
-        # 加载系统提示词
-        system_prompt = self._load_prompt(prompt_file)
+        # 加载系统提示词（保存为实例变量，后续通过消息传递）
+        self.system_prompt = self._load_prompt(prompt_file)
         
-        # 使用agent_factory创建Agent
+        # 使用agent_factory创建Agent（不再传递system_prompt参数）
+        # 注意：如果 tools 为 None，传递 None 而不是 []，这样 agent_factory 会自动加载搜索工具
         self.agent = create_agent_graph(
-            system_prompt=system_prompt,
-            tools=tools or []
+            system_prompt=None,  # 不再作为参数传递
+            tools=tools  # 传递 None 时会自动加载搜索工具
         )
         
         logger.info(f"✓ Agent服务已初始化 - tools: {len(tools) if tools else 0}")
@@ -76,6 +77,13 @@ class AgentService:
             LangChain Message对象列表
         """
         langchain_messages = []
+        
+        # 检查是否已有系统消息
+        has_system_message = any(msg.get("role") == "system" for msg in messages)
+        
+        # 如果没有系统消息且有系统提示词，则添加系统提示词
+        if not has_system_message and self.system_prompt:
+            langchain_messages.append(SystemMessage(content=self.system_prompt))
         
         # 转换消息
         for msg in messages:
@@ -170,54 +178,35 @@ class AgentService:
             agent_input.update(kwargs)
             
             # 流式调用Agent
+            # LangGraph 的流式返回格式：使用 stream_mode="values" 获取完整状态
+            # 每次迭代返回当前的完整消息列表，从中提取最新的AI回复
             full_output = ""
-            async for chunk in self.agent.astream(agent_input, stream_mode="messages"):
-                # 处理元组格式 (AIMessage, metadata)
-                if isinstance(chunk, tuple) and len(chunk) > 0:
-                    chunk = chunk[0]  # 取第一个元素（AIMessage）
-                
-                # 处理 AIMessage 对象
-                if isinstance(chunk, AIMessage):
-                    if chunk.content and isinstance(chunk.content, str):
-                        content = chunk.content
-                        # 提取新增的内容
-                        if len(content) > len(full_output):
-                            new_content = content[len(full_output):]
-                            full_output = content
-                            yield new_content
-                # 处理字典格式
-                elif isinstance(chunk, dict):
-                    # 检查是否有messages键（LangGraph格式）
-                    if "messages" in chunk:
-                        for msg in chunk["messages"]:
+            # 记录输入消息的数量，用于区分新增的AI消息
+            input_message_count = len(langchain_messages)
+            
+            async for state in self.agent.astream(agent_input, stream_mode="values"):
+                try:
+                    # state 是一个字典，包含 "messages" 键
+                    if isinstance(state, dict) and "messages" in state:
+                        messages = state["messages"]
+                        # 只处理新增的消息（索引 >= input_message_count 的消息）
+                        new_messages = messages[input_message_count:]
+                        
+                        # 找到最后一条 AIMessage（从新消息中）
+                        for msg in reversed(new_messages):
                             if isinstance(msg, AIMessage) and msg.content:
-                                content = msg.content
-                                if isinstance(content, str):
-                                    # 提取新增的内容
-                                    if len(content) > len(full_output):
-                                        new_content = content[len(full_output):]
-                                        full_output = content
+                                current_content = str(msg.content)
+                                # 提取增量内容
+                                if len(current_content) > len(full_output):
+                                    new_content = current_content[len(full_output):]
+                                    full_output = current_content
+                                    if new_content:
                                         yield new_content
-                    # 兼容旧格式
-                    elif "output" in chunk:
-                        output = chunk["output"]
-                        if isinstance(output, str) and len(output) > len(full_output):
-                            new_content = output[len(full_output):]
-                            full_output = output
-                            yield new_content
-                # 处理字符串
-                elif isinstance(chunk, str):
-                    if len(chunk) > len(full_output):
-                        new_content = chunk[len(full_output):]
-                        full_output = chunk
-                        yield new_content
-                # 处理其他Message对象
-                elif hasattr(chunk, "content"):
-                    content = chunk.content
-                    if isinstance(content, str) and len(content) > len(full_output):
-                        new_content = content[len(full_output):]
-                        full_output = content
-                        yield new_content
+                                break  # 只处理最后一条新增的 AIMessage
+                            
+                except Exception as e:
+                    logger.warning(f"处理流式chunk时出错: {e}, state类型: {type(state)}")
+                    continue
                         
         except Exception as e:
             logger.error(f"Agent流式调用失败: {e}", exc_info=True)

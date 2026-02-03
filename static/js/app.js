@@ -1107,3 +1107,287 @@ function formatDate(dateString) {
         return date.toLocaleDateString('zh-CN');
     }
 }
+
+// 搜索功能
+let currentSearchQuery = '';
+let currentSearchPage = 1;
+
+async function performSearch(query = null) {
+    const searchInput = document.getElementById('searchInput');
+    const queryText = query || searchInput.value.trim();
+    
+    if (!queryText) {
+        // 如果没有搜索词，返回视频流
+        loadVideoFeed();
+        updateSectionTitle('精彩视频');
+        return;
+    }
+    
+    currentSearchQuery = queryText;
+    currentSearchPage = 1;
+    
+    const loadingElement = document.getElementById('loading');
+    const videoGrid = document.getElementById('videoGrid');
+    
+    videoGrid.innerHTML = '';
+    loadingElement.style.display = 'block';
+    
+    try {
+        const response = await API.search.searchVideos(queryText, {
+            page: currentSearchPage,
+            page_size: currentState.pageSize,
+            sort: 'relevance'
+        });
+        
+        const { videos, total, total_pages } = response.data;
+        
+        if (videos.length === 0) {
+            videoGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px;">
+                    <i class="fas fa-search fa-4x" style="color: #ccc; margin-bottom: 20px;"></i>
+                    <h3>没有找到相关视频</h3>
+                    <p>试试其他关键词吧</p>
+                </div>
+            `;
+        } else {
+            videos.forEach(video => {
+                const videoCard = createSearchVideoCard(video);
+                videoGrid.appendChild(videoCard);
+            });
+            
+            // 添加分页控件
+            const pagination = createPagination(currentSearchPage, total_pages, (page) => {
+                currentSearchPage = page;
+                performSearch();
+            });
+            
+            const oldPagination = videoGrid.parentNode.querySelector('.pagination');
+            if (oldPagination) {
+                oldPagination.remove();
+            }
+            
+            videoGrid.parentNode.appendChild(pagination);
+        }
+        
+        updateSectionTitle(`搜索结果: "${queryText}" (${total}个结果)`);
+        currentState.currentSection = 'search';
+        
+    } catch (error) {
+        showMessage(error.message, 'error');
+    } finally {
+        loadingElement.style.display = 'none';
+    }
+}
+
+// 创建搜索结果视频卡片（支持高亮）
+function createSearchVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.onclick = () => showVideoDetail(video.id);
+    
+    // 缩略图
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'video-thumbnail';
+    
+    if (video.cover_url) {
+        const img = document.createElement('img');
+        img.src = video.cover_url;
+        img.alt = video.title;
+        thumbnail.appendChild(img);
+    } else {
+        thumbnail.innerHTML = '<i class="fas fa-video fa-3x" style="color: #ccc;"></i>';
+    }
+    
+    // 视频时长
+    if (video.duration) {
+        const duration = document.createElement('span');
+        duration.className = 'duration';
+        duration.textContent = formatDuration(video.duration);
+        thumbnail.appendChild(duration);
+    }
+    
+    card.appendChild(thumbnail);
+    
+    // 视频信息
+    const info = document.createElement('div');
+    info.className = 'video-info';
+    
+    const title = document.createElement('h3');
+    title.className = 'video-title';
+    // 如果有高亮，使用高亮内容，否则使用原始标题
+    if (video.highlight && video.highlight.title && video.highlight.title.length > 0) {
+        title.innerHTML = video.highlight.title[0];
+    } else {
+        title.textContent = video.title || '无标题';
+    }
+    info.appendChild(title);
+    
+    // 描述（如果有高亮）
+    if (video.highlight && video.highlight.description && video.highlight.description.length > 0) {
+        const desc = document.createElement('p');
+        desc.className = 'video-description-preview';
+        desc.innerHTML = video.highlight.description[0];
+        info.appendChild(desc);
+    }
+    
+    const meta = document.createElement('div');
+    meta.className = 'video-meta';
+    
+    // 作者信息
+    const author = document.createElement('div');
+    author.className = 'author';
+    
+    if (video.author_name) {
+        const name = document.createElement('span');
+        name.textContent = video.author_name;
+        author.appendChild(name);
+    } else {
+        author.innerHTML = '<i class="fas fa-user"></i> <span>未知作者</span>';
+    }
+    
+    meta.appendChild(author);
+    
+    // 视频统计
+    const stats = document.createElement('div');
+    stats.className = 'video-stats';
+    
+    const viewCount = document.createElement('span');
+    viewCount.innerHTML = `<i class="fas fa-eye"></i> ${formatCount(video.view_count || 0)}`;
+    stats.appendChild(viewCount);
+    
+    const favoriteCount = document.createElement('span');
+    favoriteCount.innerHTML = `<i class="fas fa-heart"></i> ${formatCount(video.favorite_count || 0)}`;
+    stats.appendChild(favoriteCount);
+    
+    meta.appendChild(stats);
+    
+    info.appendChild(meta);
+    card.appendChild(info);
+    
+    return card;
+}
+
+// Agent对话功能
+let currentChatId = null;
+
+function generateChatId() {
+    return `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+async function sendChatMessage() {
+    if (!isLoggedIn()) {
+        showLoginModal();
+        return;
+    }
+    
+    const chatInput = document.getElementById('chatInput');
+    const message = chatInput.value.trim();
+    
+    if (!message) {
+        return;
+    }
+    
+    // 初始化chat_id
+    if (!currentChatId) {
+        currentChatId = generateChatId();
+    }
+    
+    // 添加用户消息到界面
+    addChatMessage('user', message);
+    chatInput.value = '';
+    
+    // 禁用发送按钮
+    const sendBtn = document.getElementById('sendChatBtn');
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 发送中...';
+    
+    // 添加AI回复占位符
+    const botMessageId = `bot-${Date.now()}`;
+    addChatMessage('bot', '', botMessageId);
+    const botMessageElement = document.getElementById(botMessageId);
+    const botContentElement = botMessageElement.querySelector('.message-content');
+    
+    try {
+        // 使用流式API
+        let fullReply = '';
+        
+        await API.agent.stream(
+            message,
+            currentChatId,
+            (chunk) => {
+                // 接收流式数据块
+                fullReply += chunk;
+                botContentElement.innerHTML = `<p>${escapeHtml(fullReply)}</p>`;
+                // 滚动到底部
+                scrollChatToBottom();
+            },
+            (chatId) => {
+                // 完成
+                currentChatId = chatId;
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
+            },
+            (error) => {
+                // 错误处理
+                botContentElement.innerHTML = `<p style="color: #dc3545;">错误: ${escapeHtml(error.message)}</p>`;
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
+            }
+        );
+    } catch (error) {
+        // 如果流式API失败，尝试同步API
+        try {
+            const response = await API.agent.invoke(message, currentChatId);
+            if (response.code === 200 && response.ai_reply) {
+                botContentElement.innerHTML = `<p>${escapeHtml(response.ai_reply)}</p>`;
+                currentChatId = response.chat_id || currentChatId;
+            } else {
+                botContentElement.innerHTML = `<p style="color: #dc3545;">${escapeHtml(response.message || '请求失败')}</p>`;
+            }
+        } catch (e) {
+            botContentElement.innerHTML = `<p style="color: #dc3545;">错误: ${escapeHtml(e.message)}</p>`;
+        }
+        
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
+    }
+}
+
+function addChatMessage(role, content, messageId = null) {
+    const chatMessages = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${role}-message`;
+    if (messageId) {
+        messageDiv.id = messageId;
+    }
+    
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    if (role === 'user') {
+        avatar.innerHTML = '<i class="fas fa-user"></i>';
+    } else {
+        avatar.innerHTML = '<i class="fas fa-robot"></i>';
+    }
+    messageDiv.appendChild(avatar);
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    if (content) {
+        contentDiv.innerHTML = `<p>${escapeHtml(content)}</p>`;
+    }
+    messageDiv.appendChild(contentDiv);
+    
+    chatMessages.appendChild(messageDiv);
+    scrollChatToBottom();
+}
+
+function scrollChatToBottom() {
+    const chatMessages = document.getElementById('chatMessages');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}

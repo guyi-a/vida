@@ -412,6 +412,93 @@ const MinIOAPI = {
     }
 };
 
+// Search API
+const SearchAPI = {
+    // 搜索视频
+    searchVideos: async (query, options = {}) => {
+        const params = new URLSearchParams();
+        if (query) params.append('q', query);
+        if (options.author_id) params.append('author_id', options.author_id);
+        if (options.video_id) params.append('video_id', options.video_id);
+        if (options.sort) params.append('sort', options.sort);
+        if (options.start_time) params.append('start_time', options.start_time);
+        if (options.end_time) params.append('end_time', options.end_time);
+        if (options.page) params.append('page', options.page);
+        if (options.page_size) params.append('page_size', options.page_size);
+        
+        return await apiRequest(`${API_BASE_URL}/search/videos?${params}`);
+    }
+};
+
+// Agent API
+const AgentAPI = {
+    // 同步调用Agent对话
+    invoke: async (message, chatId) => {
+        return await apiRequest(`${API_BASE_URL}/agent/invoke`, {
+            method: 'POST',
+            body: JSON.stringify({ message, chat_id: chatId })
+        });
+    },
+    
+    // 流式调用Agent对话
+    stream: async (message, chatId, onChunk, onComplete, onError) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/agent/stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders()
+                },
+                body: JSON.stringify({ message, chat_id: chatId })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || '请求失败');
+            }
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            
+                            if (data.code === 200) {
+                                if (data.message === 'done') {
+                                    if (onComplete) onComplete(data.data?.chat_id);
+                                } else if (data.message === 'streaming' && data.data?.content) {
+                                    if (onChunk) onChunk(data.data.content);
+                                }
+                            } else {
+                                if (onError) onError(new Error(data.message || '请求失败'));
+                            }
+                        } catch (e) {
+                            console.error('解析SSE数据失败:', e);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            if (onError) {
+                onError(error);
+            } else {
+                throw error;
+            }
+        }
+    }
+};
+
 // 导出 API 对象
 window.API = {
     auth: AuthAPI,
@@ -420,5 +507,7 @@ window.API = {
     comment: CommentAPI,
     relation: RelationAPI,
     user: UserAPI,
+    search: SearchAPI,
+    agent: AgentAPI,
     minio: MinIOAPI
 };

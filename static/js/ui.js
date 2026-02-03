@@ -120,6 +120,39 @@ function showFollowing() {
     updateSectionTitle('关注管理');
 }
 
+// 搜索相关
+function handleSearchKeyPress(event) {
+    if (event.key === 'Enter') {
+        performSearch();
+    }
+}
+
+// Agent对话相关
+function showAgentChatModal() {
+    if (!isLoggedIn()) {
+        showLoginModal();
+        return;
+    }
+    closeAllModals();
+    showModal('agentChatModal');
+    // 重置chat_id，开始新对话
+    currentChatId = null;
+    // 聚焦输入框
+    setTimeout(() => {
+        const chatInput = document.getElementById('chatInput');
+        if (chatInput) {
+            chatInput.focus();
+        }
+    }, 100);
+}
+
+function handleChatKeyPress(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+    }
+}
+
 // 更新页面标题
 function updateSectionTitle(title) {
     const titleElement = document.querySelector('.section-title');

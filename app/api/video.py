@@ -138,15 +138,8 @@ async def upload_video(
         
         video = await video_crud.create(db, video_data)
         
-        # 4.5. 同步视频到ES（异步，不阻塞主流程）
-        try:
-            from app.infra.elasticsearch.sync_service import sync_video_to_es
-            author_name = current_user.user_name if current_user else None
-            await sync_video_to_es(video, author_name)
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"同步视频到ES失败（不影响主流程）: {e}")
+        # 4.5. 注意：视频同步到ES的时机应该在转码完成后（status变为published时）
+        # 转码任务完成后会自动同步，这里不需要同步（避免pending状态的视频被索引）
         
         # 5. 发送 Kafka 转码任务消息
         try:
@@ -388,13 +381,15 @@ async def update_video(
             raise NotFoundException(f"更新失败: {video_id}")
         
         # 同步更新到ES（异步，不阻塞主流程）
+        # 注意：只有在视频状态为 published 时才同步到ES
         try:
-            from app.infra.elasticsearch.sync_service import update_video_in_es
             # 重新加载作者信息
             updated_video = await video_crud.get_by_id(db, video_id, load_author=True)
-            if updated_video and updated_video.author:
-                author_name = updated_video.author.user_name
-                await update_video_in_es(updated_video, author_name)
+            if updated_video and updated_video.status == 'published':
+                from app.infra.elasticsearch.sync_service import update_video_in_es
+                if updated_video.author:
+                    author_name = updated_video.author.user_name
+                    await update_video_in_es(updated_video, author_name)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)

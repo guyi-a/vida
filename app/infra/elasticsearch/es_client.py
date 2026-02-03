@@ -28,20 +28,22 @@ def get_es_client() -> Elasticsearch:
     if _es_client is None:
         try:
             # 解析hosts配置（支持多个节点）
-            hosts = settings.ELASTICSEARCH_HOSTS.split(",")
-            hosts = [host.strip() for host in hosts]
+            hosts_raw = settings.ELASTICSEARCH_HOSTS.split(",")
+            hosts = []
+            for host in hosts_raw:
+                host = host.strip()
+                # Elasticsearch 8.x 需要完整的 URL，如果没有 scheme 则添加 http://
+                if not host.startswith(('http://', 'https://')):
+                    host = f"http://{host}"
+                hosts.append(host)
             
-            # 创建ES客户端
+            # 创建ES客户端（Elasticsearch 8.x API）
+            # 注意：需要确保客户端版本与服务器版本匹配
             _es_client = Elasticsearch(
                 hosts=hosts,
-                timeout=settings.ELASTICSEARCH_TIMEOUT,
+                request_timeout=settings.ELASTICSEARCH_TIMEOUT,
                 max_retries=settings.ELASTICSEARCH_MAX_RETRIES,
-                retry_on_timeout=True,
-                # 连接池配置
-                maxsize=25,
-                # 健康检查
-                sniff_on_start=False,
-                sniff_on_connection_fail=False,
+                retry_on_timeout=True
             )
             
             # 测试连接

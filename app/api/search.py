@@ -2,14 +2,19 @@
 搜索相关 API
 提供视频搜索功能
 """
-
+import logging
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.dependencies import get_db
+from sqlalchemy import select
+from app.core.dependencies import get_db, require_admin
 from app.schemas.request.search_request import SearchRequest
 from app.schemas.response.base_response import BaseResponse
 from app.schemas.response.search_response import SearchResponse
 from app.crud import search_crud
+from app.models.video import Video
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/search", tags=["搜索"])
 
@@ -65,5 +70,59 @@ async def search_videos(
         raise HTTPException(
             status_code=500,
             detail=f"搜索失败: {str(e)}"
+        )
+
+
+@router.post("/sync", response_model=BaseResponse, summary="同步视频到ES")
+async def sync_videos_to_es(
+    db: AsyncSession = Depends(get_db),
+    # current_user: User = Depends(require_admin)  # 可选：仅管理员可操作
+):
+    """
+    手动同步所有已发布的视频到Elasticsearch
+    
+    用于：
+    - 首次部署时初始化ES索引数据
+    - ES数据丢失后重建索引
+    - 数据不一致时修复
+    """
+    try:
+        from app.infra.elasticsearch.sync_service import bulk_sync_videos_to_es
+        
+        # 获取所有已发布的视频
+        stmt = select(Video).where(Video.status == "published")
+        result = await db.execute(stmt)
+        videos = result.scalars().all()
+        
+        if not videos:
+            return BaseResponse(
+                success=True,
+                message="没有需要同步的视频",
+                data={"synced": 0, "failed": 0}
+            )
+        
+        # 获取作者信息
+        author_ids = list(set(v.author_id for v in videos))
+        author_stmt = select(User).where(User.id.in_(author_ids))
+        author_result = await db.execute(author_stmt)
+        authors = author_result.scalars().all()
+        author_names = {a.id: a.user_name for a in authors}
+        
+        # 批量同步
+        sync_result = await bulk_sync_videos_to_es(videos, author_names)
+        
+        logger.info(f"手动同步完成: 成功 {sync_result['success']} 个，失败 {sync_result['failed']} 个")
+        
+        return BaseResponse(
+            success=True,
+            message=f"同步完成：成功 {sync_result['success']} 个，失败 {sync_result['failed']} 个",
+            data=sync_result
+        )
+        
+    except Exception as e:
+        logger.error(f"同步视频到ES失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"同步失败: {str(e)}"
         )
 

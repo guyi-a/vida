@@ -40,4 +40,4 @@ ffmpeg-python==0.2.0
 pydub==0.25.1
 
 # Elasticsearch
-elasticsearch>=8.0.0
+elasticsearch>=8.0.0,<9.0.0

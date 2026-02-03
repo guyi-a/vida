@@ -20,10 +20,13 @@
                     <span>Vida</span>
                 </div>
                 <div class="nav-search">
-                    <input type="text" placeholder="搜索视频..." id="searchInput">
-                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="搜索视频..." id="searchInput" onkeypress="handleSearchKeyPress(event)">
+                    <i class="fas fa-search" onclick="performSearch()" style="cursor: pointer;"></i>
                 </div>
                 <div class="nav-actions">
+                    <button class="btn btn-outline" onclick="showAgentChatModal()" title="AI助手">
+                        <i class="fas fa-robot"></i> AI助手
+                    </button>
                     <button class="btn btn-outline" onclick="showUploadModal()">
                         <i class="fas fa-upload"></i> 上传视频
                     </button>
@@ -170,6 +173,36 @@
             <div class="modal-body">
                 <div class="profile-detail" id="profileContent">
                     <!-- 个人资料通过 JavaScript 动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent对话模态框 -->
+    <div class="modal modal-large" id="agentChatModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-robot"></i> AI助手</h3>
+                <span class="close" onclick="closeModal('agentChatModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="chat-container" id="chatContainer">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-message bot-message">
+                            <div class="message-avatar">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div class="message-content">
+                                <p>你好！我是AI助手，可以帮助你搜索视频。你可以问我："帮我找一些搞笑的视频" 或 "搜索Python教程" 等。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="chatInput" placeholder="输入你的问题..." onkeypress="handleChatKeyPress(event)">
+                        <button class="btn btn-primary" onclick="sendChatMessage()" id="sendChatBtn">
+                            <i class="fas fa-paper-plane"></i> 发送
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

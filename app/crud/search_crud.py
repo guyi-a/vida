@@ -59,15 +59,32 @@ async def search_videos(
         
         # 添加全文搜索条件
         if query_params.q:
-            es_query["query"]["bool"]["must"].append({
-                "multi_match": {
-                    "query": query_params.q,
-                    "fields": ["title^3", "description^1"],
-                    "type": "best_fields",
-                    "operator": "or",
-                    "minimum_should_match": "75%"
-                }
-            })
+            # 根据关键词长度调整匹配策略
+            query_text = query_params.q.strip()
+            # 对于短关键词（1-2个字），使用更宽松的匹配
+            # 对于长关键词，使用更严格的匹配
+            if len(query_text) <= 2:
+                # 短关键词：使用 should 而不是 must，降低匹配要求
+                es_query["query"]["bool"]["should"] = [{
+                    "multi_match": {
+                        "query": query_text,
+                        "fields": ["title^3", "description^1"],
+                        "type": "best_fields",
+                        "operator": "or"
+                    }
+                }]
+                es_query["query"]["bool"]["minimum_should_match"] = 1
+            else:
+                # 长关键词：使用 must，提高匹配精度
+                es_query["query"]["bool"]["must"].append({
+                    "multi_match": {
+                        "query": query_text,
+                        "fields": ["title^3", "description^1"],
+                        "type": "best_fields",
+                        "operator": "or",
+                        "minimum_should_match": "50%"
+                    }
+                })
         
         # 添加结构化匹配条件
         if query_params.author_id:
@@ -118,12 +135,37 @@ async def search_videos(
             }
         
         # 2. 执行ES查询
-        es_response = es_client.search(index=settings.ELASTICSEARCH_INDEX_VIDEOS, body=es_query)
+        # Elasticsearch 8.x 支持 body 参数，但需要确保客户端版本正确
+        # 如果遇到版本兼容性问题，可以尝试使用 query 参数
+        try:
+            es_response = es_client.search(
+                index=settings.ELASTICSEARCH_INDEX_VIDEOS,
+                body=es_query
+            )
+        except Exception as e:
+            # 如果 body 参数失败，尝试使用新的 API 格式
+            logger.warning(f"使用 body 参数失败，尝试新的 API 格式: {e}")
+            es_response = es_client.search(
+                index=settings.ELASTICSEARCH_INDEX_VIDEOS,
+                query=es_query.get("query"),
+                _source=es_query.get("_source"),
+                from_=es_query.get("from", 0),
+                size=es_query.get("size", 20),
+                sort=es_query.get("sort"),
+                highlight=es_query.get("highlight")
+            )
         
         # 3. 提取视频ID列表（保持ES返回的顺序）
         hits = es_response["hits"]["hits"]
         video_ids = [hit["_source"]["id"] for hit in hits]
-        total = es_response["hits"]["total"]["value"]
+        # ES 8.x 返回格式：total 可能是数字或对象
+        total_info = es_response["hits"]["total"]
+        if isinstance(total_info, dict):
+            total = total_info["value"]
+        else:
+            total = total_info
+        
+        logger.info(f"ES搜索完成 - 查询: {query_params.q}, 结果数: {len(video_ids)}, 总数: {total}")
         
         # 提取高亮信息
         highlights = {}
@@ -142,8 +184,9 @@ async def search_videos(
                 total_pages=0
             )
         
-        # 4. 批量查询数据库获取完整信息（包括URL）
-        stmt = select(Video).where(Video.id.in_(video_ids))
+        # 4. 批量查询数据库获取完整信息（包括URL，使用 joinedload 预加载 author）
+        from sqlalchemy.orm import joinedload
+        stmt = select(Video).options(joinedload(Video.author)).where(Video.id.in_(video_ids))
         result = await db.execute(stmt)
         videos = result.scalars().all()
         
@@ -212,8 +255,9 @@ async def _fallback_db_search(
     try:
         skip = (query_params.page - 1) * query_params.page_size
         
-        # 构建查询
-        stmt = select(Video).where(Video.status == "published")
+        # 构建查询（使用 joinedload 预加载 author 关联，避免异步懒加载问题）
+        from sqlalchemy.orm import joinedload
+        stmt = select(Video).options(joinedload(Video.author)).where(Video.status == "published")
         
         # 添加搜索条件
         if query_params.q:

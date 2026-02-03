@@ -3,11 +3,9 @@
 FROM docker.elastic.co/elasticsearch/elasticsearch:8.11.0
 
 # 安装IK中文分词插件
-# 优先使用国内镜像源（华为云），如果失败则使用GitHub源
+# 使用 infinilabs 官方 CDN 地址（推荐方式）
 RUN bin/elasticsearch-plugin install -b \
-    https://mirrors.huaweicloud.com/elasticsearch-analysis-ik/8.11.0/elasticsearch-analysis-ik-8.11.0.zip || \
-    bin/elasticsearch-plugin install -b \
-    https://github.com/medcl/elasticsearch-analysis-ik/releases/download/v8.11.0/elasticsearch-analysis-ik-8.11.0.zip
+    https://get.infini.cloud/elasticsearch/analysis-ik/8.11.0
 
 # 验证插件安装
 RUN bin/elasticsearch-plugin list | grep analysis-ik || echo "Warning: IK plugin installation may have failed"
