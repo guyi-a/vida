@@ -45,6 +45,18 @@ async def lifespan(app: FastAPI):
         # 初始化数据库
         await init_db()
         
+        # 初始化Elasticsearch索引（新增）
+        try:
+            from app.infra.elasticsearch.es_client import get_es_client
+            from app.infra.elasticsearch.index_manager import init_es_indexes
+            
+            es_client = get_es_client()
+            init_es_indexes(es_client)
+            logger.info("Elasticsearch索引初始化完成")
+        except Exception as e:
+            logger.warning(f"Elasticsearch索引初始化失败（可稍后手动创建）: {e}")
+            # 不中断应用启动，允许后续手动创建索引
+        
         # 在后台线程中启动 Kafka 消费者
         kafka_thread = threading.Thread(
             target=start_kafka_consumer,
@@ -97,6 +109,8 @@ from app.api.video import router as video_router
 from app.api.favorite import router as favorite_router
 from app.api.comment import router as comment_router
 from app.api.relation import router as relation_router
+from app.api.search import router as search_router
+from app.api.agent import router as agent_router
 
 app.include_router(healthz_router)
 app.include_router(test_middleware_router)
@@ -107,6 +121,8 @@ app.include_router(video_router)
 app.include_router(favorite_router)
 app.include_router(comment_router)
 app.include_router(relation_router)
+app.include_router(search_router)
+app.include_router(agent_router)
 
 
 @app.get("/")

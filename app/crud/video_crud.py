@@ -314,6 +314,31 @@ class VideoCRUD:
         )
         result = await db.execute(stmt)
         return result.rowcount > 0
+    
+    async def get_all_published_videos(self, db: AsyncSession):
+        """
+        批量查询所有已发布的视频（仅返回热度计算需要的字段）
+        
+        Args:
+            db: 数据库会话
+            
+        Returns:
+            List: 视频列表（包含id, author_id, view_count, favorite_count, comment_count, updated_at）
+        """
+        stmt = select(
+            Video.id,
+            Video.author_id,
+            Video.view_count,
+            Video.favorite_count,
+            Video.comment_count,
+            Video.updated_at
+        ).where(
+            Video.status == "published",
+            Video.play_url.isnot(None)  # 确保视频已转码完成
+        )
+        
+        result = await db.execute(stmt)
+        return result.all()
 
 
 # 创建全局CRUD实例

@@ -138,6 +138,16 @@ async def upload_video(
         
         video = await video_crud.create(db, video_data)
         
+        # 4.5. 同步视频到ES（异步，不阻塞主流程）
+        try:
+            from app.infra.elasticsearch.sync_service import sync_video_to_es
+            author_name = current_user.user_name if current_user else None
+            await sync_video_to_es(video, author_name)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"同步视频到ES失败（不影响主流程）: {e}")
+        
         # 5. 发送 Kafka 转码任务消息
         try:
             task_id = kafka_service.submit_transcode_task(
@@ -377,6 +387,19 @@ async def update_video(
         if not updated_video:
             raise NotFoundException(f"更新失败: {video_id}")
         
+        # 同步更新到ES（异步，不阻塞主流程）
+        try:
+            from app.infra.elasticsearch.sync_service import update_video_in_es
+            # 重新加载作者信息
+            updated_video = await video_crud.get_by_id(db, video_id, load_author=True)
+            if updated_video and updated_video.author:
+                author_name = updated_video.author.user_name
+                await update_video_in_es(updated_video, author_name)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"同步视频更新到ES失败（不影响主流程）: {e}")
+        
         updated_fields = list(update_data.keys())
         
         return BaseResponse(
@@ -418,6 +441,15 @@ async def delete_video(
         success = await video_crud.delete(db, video_id)
         if not success:
             raise NotFoundException(f"删除失败: {video_id}")
+        
+        # 从ES删除（异步，不阻塞主流程）
+        try:
+            from app.infra.elasticsearch.sync_service import delete_video_from_es
+            await delete_video_from_es(video_id)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"从ES删除视频失败（不影响主流程）: {e}")
         
         from datetime import datetime
         return BaseResponse(

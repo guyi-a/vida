@@ -5,6 +5,7 @@ Celery应用配置
 
 from celery import Celery
 from celery.signals import setup_logging
+from celery.schedules import crontab
 import logging
 import os
 
@@ -87,7 +88,19 @@ def create_celery_app():
         },
         task_retry_backoff=True,
         task_retry_backoff_max=600,
-        task_retry_jitter=True
+        task_retry_jitter=True,
+        
+        # Celery Beat定时任务配置
+        beat_schedule={
+            "refresh-video-hot-score-every-hour": {
+                "task": "app.tasks.video_tasks.refresh_all_video_hot_score",
+                "schedule": crontab(minute=0, hour="*/1"),  # 每小时整点执行
+                "args": (),
+                "options": {
+                    "queue": "default"  # 使用默认队列
+                }
+            }
+        }
     )
     
     # 自动发现任务

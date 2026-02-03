@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     CELERY_ACCEPT_CONTENT: list = ["json"]
     CELERY_TIMEZONE: str = "Asia/Shanghai"
     
+    # Elasticsearch配置
+    ELASTICSEARCH_HOSTS: str = "localhost:9200"
+    ELASTICSEARCH_INDEX_VIDEOS: str = "videos"
+    ELASTICSEARCH_TIMEOUT: int = 30
+    ELASTICSEARCH_MAX_RETRIES: int = 3
+    
+    # LLM配置（AI Agent）
+    DASHSCOPE_API_KEY: Optional[str] = None
+    LLM_BASE_URL: Optional[str] = None
+    LLM_MODEL: str = "qwen-max"
+    
     # JWT配置
     SECRET_KEY: str = "guyi"  # JWT密钥
     ALGORITHM: str = "HS256"  # JWT算法

@@ -26,6 +26,7 @@ langchain==1.0.4
 langgraph==1.0.2
 langchain_community==0.4.1
 langchain-openai>=0.1.0
+tiktoken>=0.5.0
 
 # 对象存储
 minio==7.1.16
@@ -37,3 +38,6 @@ kafka-python==2.0.2
 celery==5.3.4
 ffmpeg-python==0.2.0
 pydub==0.25.1
+
+# Elasticsearch
+elasticsearch>=8.0.0

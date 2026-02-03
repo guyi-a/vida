@@ -208,6 +208,20 @@ def video_transcode_task(
                     
                     await session.commit()
                     logger.info(f"视频元数据更新成功 - Video ID: {video_id}")
+                    
+                    # 同步到ES（视频已发布，需要同步）
+                    try:
+                        from app.infra.elasticsearch.sync_service import sync_video_to_es
+                        # 获取作者信息
+                        author_result = await session.execute(
+                            select(User).where(User.id == video.author_id)
+                        )
+                        author = author_result.scalar_one_or_none()
+                        author_name = author.user_name if author else None
+                        await sync_video_to_es(video, author_name)
+                        logger.info(f"视频同步到ES成功 - Video ID: {video_id}")
+                    except Exception as e:
+                        logger.warning(f"同步视频到ES失败（不影响主流程）: {e}")
             
             # 在同步函数中运行异步代码
             asyncio.run(update_video_metadata())

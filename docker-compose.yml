@@ -17,6 +17,7 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - ELASTICSEARCH_HOSTS=elasticsearch:9200
     depends_on:
       postgres:
         condition: service_healthy
@@ -25,6 +26,8 @@ services:
       minio:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     restart: "no"  # 开发环境：出错时不自动重启，避免循环报错
 
@@ -174,9 +177,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  elasticsearch:
+    # 构建包含IK中文分词插件的镜像
+    build:
+      context: ./elasticsearch
+      dockerfile: Dockerfile
+    # 如果构建太慢，可以先使用官方镜像，然后手动安装IK插件：
+    # image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: guyi-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   kafka_data:
+  elasticsearch_data:
 
